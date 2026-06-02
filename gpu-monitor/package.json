@@ -1,0 +1,12 @@
+{
+  "name": "gpu-monitor",
+  "version": "1.0.0",
+  "description": "Fancy GPU monitoring dashboard for nvidia-smi",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2"
+  }
+}

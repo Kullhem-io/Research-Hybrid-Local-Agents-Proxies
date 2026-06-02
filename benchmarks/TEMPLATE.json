@@ -1,0 +1,118 @@
+{
+  "_schema": "Benchmark run record for subagent collaboration",
+  "_version": "1.0",
+
+  "run_id": "run-YYYYMMDD-HHMMSS",
+  "task": {
+    "description": "One-line description of the task given to agents",
+    "category": "implementation|bug_hunt|code_review|architecture|documentation|exploration|multimodal|mixed",
+    "complexity": "trivial|simple|moderate|complex",
+    "prompt": "Full prompt given to the main agent"
+  },
+
+  "configuration": {
+    "agents_used": ["gemma-scout", "qwen-architect", "qwen-implementer"],
+    "parallel_groups": [
+      {
+        "group": 1,
+        "agents": ["gemma-scout", "gemma-bug-sniffer"],
+        "note": "Independent sensing — launched simultaneously"
+      },
+      {
+        "group": 2,
+        "agents": ["qwen-architect"],
+        "note": "Depends on group 1 results"
+      }
+    ],
+    "model_routing": {
+      "gemma-scout": "gemma-4-E4B (:8004)",
+      "qwen-architect": "qwen3.6-27B (:8001)"
+    }
+  },
+
+  "timing": {
+    "_unit": "milliseconds",
+    "total_wall_clock_ms": 0,
+    "agent_timings_ms": {
+      "gemma-scout": 4500,
+      "gemma-bug-sniffer": 5200,
+      "qwen-architect": 18000
+    },
+    "parallel_group_timings_ms": {
+      "group_1": 5200,
+      "group_2": 18000
+    },
+    "overhead_ms": {
+      "subprocess_spawn": 0,
+      "context_building": 0,
+      "result_synthesis": 0
+    }
+  },
+
+  "gpu": {
+    "_captured_at": "start|mid|end",
+    "gpu_0_3090": {
+      "util_start_pct": 0,
+      "util_end_pct": 0,
+      "memory_used_gb_start": 0,
+      "memory_used_gb_end": 0,
+      "power_w_start": 0,
+      "power_w_end": 0
+    },
+    "gpu_1_3060": {
+      "util_start_pct": 0,
+      "util_end_pct": 0,
+      "memory_used_gb_start": 0,
+      "memory_used_gb_end": 0
+    },
+    "gpu_2_3060": {
+      "util_start_pct": 0,
+      "util_end_pct": 0,
+      "memory_used_gb_start": 0,
+      "memory_used_gb_end": 0
+    }
+  },
+
+  "tokens": {
+    "_per_agent": {
+      "gemma-scout": { "input": 0, "output": 0 },
+      "qwen-architect": { "input": 0, "output": 0 }
+    },
+    "total_input": 0,
+    "total_output": 0,
+    "total": 0
+  },
+
+  "quality": {
+    "_scale": "1-5, where 5=perfect, 1=failed",
+    "correctness": 5,
+    "completeness": 5,
+    "efficiency": 5,
+    "safety": 5,
+    "notes": "What went well, what didn't, what would change next time"
+  },
+
+  "findings": {
+    "what_worked": ["Gemma scout was fast and accurate"],
+    "what_failed": ["Qwen architect produced overly complex design"],
+    "agent_specific_notes": {
+      "gemma-scout": "Found all 3 relevant files quickly",
+      "qwen-architect": "Took 18s, could be improved with tighter prompt"
+    },
+    "optimization_ideas": [
+      "Add qwen-refactorer agent for this type of task",
+      "Chain scout → architect is solid but architect prompt needs tightening"
+    ]
+  },
+
+  "comparison": {
+    "_use_when_re-running the same task with different agent config": {
+      "previous_run_id": null,
+      "delta_latency_ms": 0,
+      "delta_quality": 0,
+      "delta_tokens": 0,
+      "winner": "current|previous|tie",
+      "why": ""
+    }
+  }
+}

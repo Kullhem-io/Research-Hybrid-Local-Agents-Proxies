@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GPU Monitor</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>🎮 GPU Monitor</h1>
+      <div class="header-info">
+        <span id="driverVersion">Driver: --</span>
+        <span id="cudaVersion">CUDA: --</span>
+        <span id="lastUpdate">Last update: --</span>
+        <button id="refreshBtn" class="refresh-btn">↻ Refresh</button>
+      </div>
+    </header>
+
+    <div id="gpuGrid" class="gpu-grid">
+      <div class="loading">Loading GPU data...</div>
+    </div>
+
+    <footer>
+      <p>Auto-refreshes every <span id="intervalDisplay">5</span>s · 
+        <label><input type="checkbox" id="autoRefresh" checked> Auto-refresh</label>
+      </p>
+    </footer>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

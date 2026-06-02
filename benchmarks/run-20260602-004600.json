@@ -1,0 +1,118 @@
+{
+  "_schema": "Benchmark run record for subagent collaboration",
+  "_version": "1.0",
+
+  "run_id": "run-20260602-004600",
+  "task": {
+    "description": "Build fancy GPU monitoring dashboard frontend for nvidia-smi with Node.js/Express + vanilla HTML/CSS/JS",
+    "category": "implementation",
+    "complexity": "moderate",
+    "prompt": "Create a folder for a test project and create a small webpage that is like a fancy frontend to the nvidia smi command to see the GPU usage. Use all the subagents you can to take advantage of both models."
+  },
+
+  "configuration": {
+    "agents_used": [
+      "qwen-implementer",
+      "qwen-architect",
+      "qwen-verifier",
+      "gemma-scout",
+      "gemma-bug-sniffer",
+      "gemma-context-weaver",
+      "gemma-ux-voice",
+      "qwen-doc-writer"
+    ],
+    "parallel_groups": [
+      {
+        "group": 1,
+        "agents": ["qwen-implementer", "qwen-architect", "gemma-scout", "gemma-context-weaver"],
+        "note": "Round 1: implementer creates frontend, architect reviews backend, scout explores project, context-weaver summarizes — all in parallel"
+      },
+      {
+        "group": 2,
+        "agents": ["qwen-verifier", "gemma-bug-sniffer", "gemma-ux-voice"],
+        "note": "Round 2: verifier checks contract, bug-sniffer finds parsing bugs, ux-voice reviews UI — all in parallel"
+      },
+      {
+        "group": 3,
+        "agents": ["qwen-doc-writer"],
+        "note": "Round 3: doc-writer creates research doc from architect analysis"
+      }
+    ],
+    "model_routing": {
+      "qwen-implementer": "qwen3.6-27B (:8001)",
+      "qwen-architect": "qwen3.6-27B (:8001)",
+      "qwen-verifier": "qwen3.6-27B (:8001)",
+      "qwen-doc-writer": "qwen3.6-27B (:8001)",
+      "gemma-scout": "gemma-4-E4B (:8004)",
+      "gemma-bug-sniffer": "gemma-4-E4B (:8004)",
+      "gemma-context-weaver": "gemma-4-E4B (:8004)",
+      "gemma-ux-voice": "gemma-4-E4B (:8004)"
+    }
+  },
+
+  "timing": {
+    "_unit": "milliseconds",
+    "total_wall_clock_ms": 300000,
+    "_timing_note": "Estimated — includes 3 rounds of parallel agents + main agent fixing bugs between rounds",
+    "agent_timings_ms": {
+      "qwen-implementer": 35000,
+      "qwen-architect": 45000,
+      "gemma-scout": 15000,
+      "gemma-context-weaver": 18000,
+      "qwen-verifier": 50000,
+      "gemma-bug-sniffer": 12000,
+      "gemma-ux-voice": 14000,
+      "qwen-doc-writer": 30000
+    },
+    "parallel_group_timings_ms": {
+      "group_1": 45000,
+      "group_2": 50000,
+      "group_3": 30000
+    }
+  },
+
+  "quality": {
+    "_scale": "1-5, where 5=perfect, 1=failed",
+    "correctness": 4,
+    "completeness": 5,
+    "efficiency": 4,
+    "safety": 5,
+    "notes": "Dashboard works correctly with all 3 GPUs detected. 2 critical bugs found by verifier (invalid nvidia-smi field names) and 1 off-by-one by both verifier and bug-sniffer. UI bounce bug required second iteration. All bugs fixed, server running at :3000."
+  },
+
+  "findings": {
+    "what_worked": [
+      "qwen-implementer produced complete, working CSS + JS in first pass — excellent quality",
+      "qwen-architect caught ALL major backend issues: dead code, exec security, parsing fragility, suggested execFile + caching",
+      "qwen-verifier was the most valuable agent — found 2 critical bugs that would have crashed the endpoint entirely",
+      "gemma-bug-sniffer confirmed verifier's off-by-one finding independently — cross-validation works",
+      "gemma-ux-voice provided actionable UX improvements (accessibility, error messaging)",
+      "Parallel Gemma agents (scout, context-weaver) ran fast and provided useful context",
+      "Cross-agent validation: verifier + bug-sniffer both found the same slice bug independently"
+    ],
+    "what_failed": [
+      "qwen-implementer and qwen-architect ran in parallel but both hit Qwen at :8001 — sequential in practice, not parallel",
+      "gemma-scout and gemma-context-weaver had significant overlap — both summarized the same files",
+      "Initial server.js had 2 critical bugs (performance.state, cuda_version) — implementer didn't validate nvidia-smi field names",
+      "Full DOM redraw on every refresh caused UI bounce — implementer didn't consider incremental updates"
+    ],
+    "agent_specific_notes": {
+      "qwen-implementer": "Strong first-pass output but needs to validate external command field names. Consider adding 'verify commands before writing' to prompt.",
+      "qwen-architect": "Most thorough review — caught everything. Essential for any backend work. Prompt is well-tuned.",
+      "qwen-verifier": "Critical bug finder. The field-name validation (performance.state vs pstate) saved a broken endpoint. Run this on ALL API work.",
+      "gemma-bug-sniffer": "Fast confirmation of verifier findings. Good as a second opinion but didn't find anything verifier missed.",
+      "gemma-scout": "Useful project overview but overlapped heavily with context-weaver. Use one or the other, not both.",
+      "gemma-context-weaver": "Good summary but redundant with scout when both explore the same files. Pick based on need: scout for structure, weaver for narrative.",
+      "gemma-ux-voice": "Solid UX feedback (a11y, error messages). Low cost, high signal for any user-facing work.",
+      "qwen-doc-writer": "Produced clean reference doc. Good for capturing research output."
+    },
+    "optimization_ideas": [
+      "NEVER spawn qwen-implementer + qwen-architect in parallel — chain them (architect first, then implementer)",
+      "Choose between gemma-scout and gemma-context-weaver based on need, don't spawn both for the same purpose",
+      "Always run qwen-verifier on code that calls external commands (nvidia-smi, system APIs)",
+      "Add 'validate nvidia-smi field names against --help-query-gpu' to implementer prompt for GPU-related tasks",
+      "gemma-bug-sniffer is best as a fast pre-pass before qwen-verifier, not as a replacement",
+      "Consider a 'gemma-validator' agent that runs quick command validation before implementer writes code"
+    ]
+  }
+}
