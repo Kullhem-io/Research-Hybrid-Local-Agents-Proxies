@@ -16,14 +16,15 @@ GPU 1: RTX 3060  (12 GB) ─── Qwen 27B tensor shard (1/5 of layers)
 GPU 2: RTX 3060  (12 GB) ─── Gemma 4 E4B (:8004) + bge-small-en (:8010)
 ```
 
-**Critical constraint:** llama-server serializes requests per instance. True parallelism only exists:
-- ✅ Across different models (Qwen + Gemma simultaneously)
-- ❌ Within the same model (two Qwen agents queue behind each other at :8001)
+**Parallelism rules (Gemma `--parallel 2` is enabled):**
+- ✅ **Gemma agents can run 2 in parallel** — llama-server on :8004 handles 2 concurrent requests
+- ✅ **Cross-model parallelism** — Qwen + Gemma simultaneously (different servers)
+- ❌ **Qwen agents queue** — only 1 concurrent request at :8001, chain sequentially
 
 ### Parallelism Optimization
-- Gemma `--parallel` should be set to 2 (GPU2 has ~6 GB free VRAM)
+- ✅ Gemma `--parallel 2` is **enabled** — 2 Gemma agents can truly run in parallel
 - Qwen agents should be **chained sequentially**, never spawned in parallel
-- Gemma agents can run in parallel with each other AND with Qwen agents
+- Max useful parallel group: **2 Gemma + 1 Qwen** (3 agents truly concurrent)
 
 ## Available Subagents
 
@@ -98,7 +99,7 @@ An initial architectural analysis has been completed. Key findings:
 
 - **Pure proxy routing** loses the value of role-specific prompts and tool permission boundaries — not recommended as a replacement
 - **Hybrid approach** (proxy enhances subagents, doesn't replace them) is the optimal long-term path
-- **Phase 1 wins:** Set Gemma `--parallel 2`, chain Qwen agents sequentially, eliminate unnecessary parallel Qwen spawns
+- **Phase 1 done:** Gemma `--parallel 2` is enabled, Qwen agents should be chained sequentially
 
 See `docs/proxy-vs-subagents.md` for the full analysis.
 

@@ -25,6 +25,6 @@ Append-only comparison table. Each row is a completed benchmark run.
 - [ ] **HIGH:** Chain Qwen agents sequentially instead of parallel (architect → implementer → verifier)
 - [ ] **HIGH:** Always run qwen-verifier on code calling external commands
 - [ ] **MEDIUM:** Choose between gemma-scout and gemma-context-weaver, don't spawn both for same purpose
-- [ ] **MEDIUM:** Set Gemma `--parallel 2` to enable real Gemma-to-Gemma parallelism
+- [x] **MEDIUM:** Set Gemma `--parallel 2` to enable real Gemma-to-Gemma parallelism — DONE 2026-06-02
 - [ ] **LOW:** Add command validation step to qwen-implementer prompt
 - [ ] **LOW:** Consider `gemma-validator` agent for pre-flight command checking
