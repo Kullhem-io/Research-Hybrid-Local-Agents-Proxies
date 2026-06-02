@@ -16,7 +16,12 @@ Thumbs.db
 
 # Qwen Code internal
 .qwen/tmp/
+.qwen/settings.json
+.qwen/settings.json.orig
 .browser-pilot/
+
+# Keep agent definitions but not runtime config
+!.qwen/agents/
 
 # Logs
 *.log

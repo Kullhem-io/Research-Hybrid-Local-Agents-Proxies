@@ -1,8 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(which *)"
-    ]
-  },
-  "$version": 4
-}
