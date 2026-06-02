@@ -3,6 +3,7 @@ import { execFile } from 'child_process';
 import { promisify } from 'util';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import os from 'os';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const execFileAsync = promisify(execFile);
@@ -16,6 +17,9 @@ const CACHE_TTL = 2000;
 
 // CUDA version is fetched once at startup — it doesn't change at runtime
 let cudaVersion = 'N/A';
+
+// SSE clients
+const sseClients = new Set();
 
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -116,6 +120,9 @@ async function getGpuData() {
     cachedData = result;
     cacheTime = now;
 
+    // Notify SSE clients of fresh data
+    broadcastToSseClients(result);
+
     return result;
   } catch (error) {
     // Differentiate error types for better client feedback
@@ -138,6 +145,48 @@ app.get('/api/health', (req, res) => {
     cacheAge: cachedData ? Date.now() - cacheTime : null
   });
 });
+
+// SSE endpoint for real-time updates
+app.get('/api/events', (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
+
+  // Send initial data immediately
+  if (cachedData) {
+    res.write(`data: ${JSON.stringify(cachedData)}\n\n`);
+  }
+
+  sseClients.add(res);
+
+  req.on('close', () => {
+    sseClients.delete(res);
+  });
+});
+
+// Helper to broadcast GPU data to all SSE clients
+function broadcastToSseClients(data) {
+  const message = `data: ${JSON.stringify(data)}\n\n`;
+  const deadClients = [];
+
+  for (const client of sseClients) {
+    try {
+      if (!client.writableEnded) {
+        client.write(message);
+      } else {
+        deadClients.push(client);
+      }
+    } catch {
+      deadClients.push(client);
+    }
+  }
+
+  // Clean up dead clients
+  for (const client of deadClients) {
+    sseClients.delete(client);
+  }
+}
 
 // Main GPU data endpoint
 app.get('/api/gpu', async (req, res) => {
@@ -162,7 +211,39 @@ app.get('/api/gpu', async (req, res) => {
 // Fetch CUDA version at startup (only runs once)
 initCudaVersion();
 
-// Bind to localhost only for safety
-app.listen(PORT, '127.0.0.1', () => {
-  console.log(`🚀 GPU Monitor running at http://localhost:${PORT}`);
+// Get local network interfaces for display
+function getLocalAddresses() {
+  const interfaces = os.networkInterfaces();
+  const addresses = [];
+
+  for (const name of Object.keys(interfaces)) {
+    for (const iface of interfaces[name]) {
+      // Skip internal and non-IPv4 addresses
+      if (iface.family === 'IPv4' && !iface.internal) {
+        addresses.push({ interface: name, address: iface.address });
+      }
+    }
+  }
+
+  return addresses;
+}
+
+// Serve network info for connecting from other devices
+app.get('/api/network', (req, res) => {
+  res.json({
+    port: PORT,
+    addresses: getLocalAddresses(),
+    localhost: `http://localhost:${PORT}`,
+    local: getLocalAddresses().map(a => `http://${a.address}:${PORT}`)
+  });
+});
+
+// Bind to 0.0.0.0 to allow access from other devices on the network
+app.listen(PORT, '0.0.0.0', () => {
+  const addresses = getLocalAddresses();
+  console.log(`🚀 GPU Monitor running on port ${PORT}`);
+  console.log(`   Local:   http://localhost:${PORT}`);
+  addresses.forEach(a => {
+    console.log(`   Network: http://${a.address}:${PORT} (${a.interface})`);
+  });
 });

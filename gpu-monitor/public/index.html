@@ -2,19 +2,25 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#0a0e17">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>GPU Monitor</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <div class="container">
     <header>
-      <h1>🎮 GPU Monitor</h1>
-      <div class="header-info">
-        <span id="driverVersion">Driver: --</span>
-        <span id="cudaVersion">CUDA: --</span>
-        <span id="lastUpdate">Last update: --</span>
-        <button id="refreshBtn" class="refresh-btn">↻ Refresh</button>
+      <div class="header-main">
+        <h1>🎮 GPU Monitor</h1>
+        <button id="menuBtn" class="menu-btn" aria-label="Toggle menu">☰</button>
+      </div>
+      <div class="header-info" id="headerInfo">
+        <span id="driverVersion" class="header-badge">Driver: --</span>
+        <span id="cudaVersion" class="header-badge">CUDA: --</span>
+        <span id="lastUpdate" class="header-badge">Last update: --</span>
+        <button id="refreshBtn" class="refresh-btn" aria-label="Refresh data">↻ Refresh</button>
       </div>
     </header>
 
@@ -22,13 +28,39 @@
       <div class="loading">Loading GPU data...</div>
     </div>
 
-    <footer>
-      <p>Auto-refreshes every <span id="intervalDisplay">5</span>s · 
-        <label><input type="checkbox" id="autoRefresh" checked> Auto-refresh</label>
-      </p>
+    <footer id="footer">
+      <div class="footer-content">
+        <div class="footer-left">
+          <span id="connectionStatus" class="status-indicator">● Connected</span>
+          <span id="networkInfo"></span>
+        </div>
+        <div class="footer-right">
+          <span>Auto-refresh: <span id="intervalDisplay">5</span>s</span>
+          <label class="toggle-label">
+            <input type="checkbox" id="autoRefresh" checked>
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+      </div>
     </footer>
   </div>
 
+  <div id="connectModal" class="modal hidden">
+    <div class="modal-content">
+      <h2>📱 Connect from another device</h2>
+      <p>Open this URL on your phone or another device:</p>
+      <div id="networkUrls" class="network-urls"></div>
+      <button id="closeModal" class="modal-close">Close</button>
+    </div>
+  </div>
+
   <script src="app.js"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js');
+      });
+    }
+  </script>
 </body>
 </html>

@@ -1,9 +1,13 @@
 /**
- * GPU Monitor — Frontend Controller
+ * GPU Monitor — SPA Frontend Controller
  *
- * Fetches GPU data from the backend, renders cards into #gpuGrid,
- * and auto-refreshes at a configurable interval. Uses incremental
- * DOM updates to avoid full redraws on each refresh.
+ * Features:
+ * - SSE-based real-time updates (push from server, no polling)
+ * - Pull-to-refresh on mobile
+ * - Incremental DOM updates for snappy feel
+ * - Connection status indicator
+ * - Network info modal for connecting from other devices
+ * - Responsive mobile-first design
  */
 
 /* ------------------------------------------------------------------ */
@@ -11,7 +15,9 @@
 /* ------------------------------------------------------------------ */
 
 const API_ENDPOINT = '/api/gpu';
-const DEFAULT_INTERVAL = 5;          // seconds
+const SSE_ENDPOINT = '/api/events';
+const NETWORK_ENDPOINT = '/api/network';
+const DEFAULT_INTERVAL = 5;          // seconds (fallback if SSE fails)
 const MIN_INTERVAL = 1;
 const MAX_INTERVAL = 60;
 
@@ -23,6 +29,11 @@ let refreshTimer = null;
 let refreshInterval = DEFAULT_INTERVAL;
 let autoRefreshEnabled = true;
 let isFirstRender = true;
+let sseConnection = null;
+let sseConnected = false;
+let isPulling = false;
+let pullStartY = 0;
+let pullCurrentY = 0;
 
 /* ------------------------------------------------------------------ */
 /*  DOM References                                                    */
@@ -35,6 +46,13 @@ const lastUpdateEl    = document.getElementById('lastUpdate');
 const refreshBtn      = document.getElementById('refreshBtn');
 const autoRefreshCb   = document.getElementById('autoRefresh');
 const intervalDisp    = document.getElementById('intervalDisplay');
+const connectionStatus = document.getElementById('connectionStatus');
+const networkInfoEl   = document.getElementById('networkInfo');
+const menuBtn         = document.getElementById('menuBtn');
+const connectModal    = document.getElementById('connectModal');
+const networkUrlsEl   = document.getElementById('networkUrls');
+const closeModalBtn   = document.getElementById('closeModal');
+const headerInfo      = document.getElementById('headerInfo');
 
 /* ------------------------------------------------------------------ */
 /*  Utility helpers                                                   */
@@ -51,15 +69,11 @@ function formatMemory(raw) {
   const match = String(raw).match(/([\d.]+)\s*MiB/i);
   if (match) {
     const mi = parseFloat(match[1]);
-    if (mi >= 1024) {
-      return `${(mi / 1024).toFixed(1)} GB`;
-    }
+    if (mi >= 1024) return `${(mi / 1024).toFixed(1)} GB`;
     return `${Math.round(mi)} MB`;
   }
   const matchGB = String(raw).match(/([\d.]+)\s*GiB/i);
-  if (matchGB) {
-    return `${parseFloat(matchGB[1]).toFixed(1)} GB`;
-  }
+  if (matchGB) return `${parseFloat(matchGB[1]).toFixed(1)} GB`;
   return raw;
 }
 
@@ -81,13 +95,59 @@ function escapeHtml(str) {
 }
 
 /* ------------------------------------------------------------------ */
+/*  SSE Connection (primary data source)                              */
+/* ------------------------------------------------------------------ */
+
+function connectSSE() {
+  // Close existing connection
+  if (sseConnection) {
+    sseConnection.close();
+    sseConnection = null;
+  }
+
+  sseConnection = new EventSource(SSE_ENDPOINT);
+
+  sseConnection.onopen = () => {
+    sseConnected = true;
+    updateConnectionStatus(true);
+    console.log('[gpu-monitor] SSE connected');
+  };
+
+  sseConnection.addEventListener('message', (event) => {
+    try {
+      const data = JSON.parse(event.data);
+      renderGpuCards(data);
+    } catch (err) {
+      console.error('[gpu-monitor] SSE parse error:', err);
+    }
+  });
+
+  sseConnection.onerror = (err) => {
+    sseConnected = false;
+    updateConnectionStatus(false);
+    console.error('[gpu-monitor] SSE error:', err);
+
+    // Fallback to polling if SSE fails
+    if (autoRefreshEnabled) {
+      startAutoRefresh();
+    }
+  };
+}
+
+function updateConnectionStatus(connected) {
+  if (connected) {
+    connectionStatus.className = 'status-indicator connected';
+    connectionStatus.textContent = '● SSE Connected';
+  } else {
+    connectionStatus.className = 'status-indicator disconnected';
+    connectionStatus.textContent = '● Polling (SSE unavailable)';
+  }
+}
+
+/* ------------------------------------------------------------------ */
 /*  GPU Card — create or find by GPU id                               */
 /* ------------------------------------------------------------------ */
 
-/**
- * Find an existing card for a given GPU id, or create a new one.
- * Cards are keyed by data-gpu-id so they persist across refreshes.
- */
 function getOrCreateCard(gpu) {
   let card = gpuGrid.querySelector(`[data-gpu-id="${gpu.id}"]`);
 
@@ -107,7 +167,7 @@ function getOrCreateCard(gpu) {
 
       <div class="metric-row">
         <div class="metric-label">
-          <span class="label">GPU Utilization</span>
+          <span class="label">GPU</span>
           <span class="value"></span>
         </div>
         <div class="progress-track">
@@ -117,7 +177,7 @@ function getOrCreateCard(gpu) {
 
       <div class="metric-row">
         <div class="metric-label">
-          <span class="label">Memory Usage</span>
+          <span class="label">Memory</span>
           <span class="value"></span>
         </div>
         <div class="progress-track">
@@ -127,7 +187,7 @@ function getOrCreateCard(gpu) {
 
       <div class="metric-row">
         <div class="metric-label">
-          <span class="label">Temperature</span>
+          <span class="label">Temp</span>
           <span class="value"></span>
         </div>
         <div class="progress-track">
@@ -137,19 +197,19 @@ function getOrCreateCard(gpu) {
 
       <div class="detail-grid">
         <div class="detail-item">
-          <span class="label">Fan Speed</span>
+          <span class="label">Fan</span>
           <span class="value"></span>
         </div>
         <div class="detail-item">
-          <span class="label">Power Draw</span>
+          <span class="label">Power</span>
           <span class="value"></span>
         </div>
         <div class="detail-item">
-          <span class="label">Power Limit</span>
+          <span class="label">Limit</span>
           <span class="value"></span>
         </div>
         <div class="detail-item">
-          <span class="label">Perf State</span>
+          <span class="label">P-State</span>
           <span class="value"></span>
         </div>
       </div>
@@ -161,18 +221,12 @@ function getOrCreateCard(gpu) {
   return card;
 }
 
-/**
- * Update a card's content in place. Only touches the values that
- * changed, keeping DOM layout stable.
- */
 function updateCard(card, gpu) {
   const { querySelector: q, querySelectorAll: qa } = card;
 
-  // Header
   q('.gpu-name').textContent = gpu.name;
   q('.gpu-id').textContent = `GPU ${gpu.id}`;
 
-  // Metric rows: GPU Util, Memory, Temp
   const metricRows = qa('.metric-row');
 
   // GPU Utilization
@@ -199,22 +253,12 @@ function updateCard(card, gpu) {
   detailValues[3].textContent = gpu.perfState || '\u2014';
 }
 
-/**
- * Set a progress fill width with smooth transition. Preserves the
- * existing width on first call so the transition animates from the
- * current value rather than jumping to 0.
- */
 function updateProgressFill(fill, width, colorClassStr) {
-  // Update color class
   const classes = ['green', 'yellow', 'red', 'temp-green', 'temp-yellow', 'temp-red'];
   fill.className = 'progress-fill ' + colorClassStr;
 
-  // On first render, start from 0 for the entrance animation.
-  // On subsequent updates, the current width is already set so
-  // the CSS transition animates from old to new.
   if (isFirstRender) {
     fill.style.width = '0%';
-    // Double rAF to let the browser paint width:0 before setting target
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
         fill.style.width = `${width}%`;
@@ -232,7 +276,6 @@ function updateProgressFill(fill, width, colorClassStr) {
 function renderGpuCards(data) {
   const { gpus, driverVersion, cudaVersion, timestamp } = data;
 
-  // Update header info
   driverVersionEl.textContent = `Driver: ${driverVersion || 'N/A'}`;
   cudaVersionEl.textContent   = `CUDA: ${cudaVersion || 'N/A'}`;
   lastUpdateEl.innerHTML      = `<span class="live-dot"></span>${formatTimestamp(timestamp)}`;
@@ -244,23 +287,19 @@ function renderGpuCards(data) {
   }
 
   if (isFirstRender) {
-    // Initial load: build all cards from scratch
     gpus.forEach(gpu => {
       const card = getOrCreateCard(gpu);
       updateCard(card, gpu);
     });
     isFirstRender = false;
   } else {
-    // Subsequent updates: update existing cards, add new ones, remove gone ones
     const presentIds = new Set(gpus.map(g => g.id));
 
-    // Update or add
     gpus.forEach(gpu => {
       const card = getOrCreateCard(gpu);
       updateCard(card, gpu);
     });
 
-    // Remove cards for GPUs that no longer exist
     gpuGrid.querySelectorAll('.gpu-card').forEach(card => {
       if (!presentIds.has(card.dataset.gpuId)) {
         card.remove();
@@ -283,15 +322,13 @@ function showError(message) {
 }
 
 /* ------------------------------------------------------------------ */
-/*  Data fetching                                                     */
+/*  Data fetching (fallback polling)                                  */
 /* ------------------------------------------------------------------ */
 
 async function fetchGpuData() {
   try {
     const res = await fetch(API_ENDPOINT);
-    if (!res.ok) {
-      throw new Error(`HTTP ${res.status} ${res.statusText}`);
-    }
+    if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
     const data = await res.json();
     renderGpuCards(data);
   } catch (err) {
@@ -301,7 +338,7 @@ async function fetchGpuData() {
 }
 
 /* ------------------------------------------------------------------ */
-/*  Auto-refresh management                                           */
+/*  Auto-refresh management (fallback polling)                        */
 /* ------------------------------------------------------------------ */
 
 function startAutoRefresh() {
@@ -320,8 +357,13 @@ function stopAutoRefresh() {
 function toggleAutoRefresh() {
   autoRefreshEnabled = autoRefreshCb.checked;
   if (autoRefreshEnabled) {
-    startAutoRefresh();
+    if (sseConnected) {
+      connectSSE();
+    } else {
+      startAutoRefresh();
+    }
   } else {
+    if (sseConnection) sseConnection.close();
     stopAutoRefresh();
   }
 }
@@ -331,9 +373,99 @@ function updateInterval(newInterval) {
   if (isNaN(newInterval)) newInterval = DEFAULT_INTERVAL;
   refreshInterval = newInterval;
   intervalDisp.textContent = refreshInterval;
-  if (autoRefreshEnabled) {
+  if (autoRefreshEnabled && !sseConnected) {
     startAutoRefresh();
   }
+}
+
+/* ------------------------------------------------------------------ */
+/*  Pull-to-refresh (mobile)                                          */
+/* ------------------------------------------------------------------ */
+
+function initPullToRefresh() {
+  let startY = 0;
+  let pulling = false;
+  let pullIndicator = null;
+
+  document.addEventListener('touchstart', (e) => {
+    if (window.scrollY === 0) {
+      startY = e.touches[0].clientY;
+      pulling = true;
+    }
+  }, { passive: true });
+
+  document.addEventListener('touchmove', (e) => {
+    if (!pulling) return;
+    const currentY = e.touches[0].clientY;
+    const diff = currentY - startY;
+
+    if (diff > 0 && diff < 200) {
+      e.preventDefault();
+
+      if (!pullIndicator) {
+        pullIndicator = document.createElement('div');
+        pullIndicator.className = 'pull-indicator';
+        pullIndicator.innerHTML = '<span>↓</span><span>Release to refresh</span>';
+        document.body.appendChild(pullIndicator);
+      }
+
+      const opacity = Math.min(diff / 150, 1);
+      pullIndicator.style.transform = `translateY(${diff - 50}px)`;
+      pullIndicator.style.opacity = opacity;
+    }
+  }, { passive: false });
+
+  document.addEventListener('touchend', () => {
+    if (pullIndicator && pullIndicator.style.opacity === '1') {
+      fetchGpuData();
+      refreshBtn.classList.add('spinning');
+      setTimeout(() => refreshBtn.classList.remove('spinning'), 600);
+    }
+
+    if (pullIndicator) {
+      pullIndicator.remove();
+      pullIndicator = null;
+    }
+    pulling = false;
+  });
+}
+
+/* ------------------------------------------------------------------ */
+/*  Network info modal                                                */
+/* ------------------------------------------------------------------ */
+
+async function loadNetworkInfo() {
+  try {
+    const res = await fetch(NETWORK_ENDPOINT);
+    if (!res.ok) return;
+    const data = await res.json();
+
+    if (data.local && data.local.length > 0) {
+      networkUrlsEl.innerHTML = data.local.map(url =>
+        `<div class="network-url"><span class="url-text">${escapeHtml(url)}</span><button class="copy-btn" data-url="${escapeHtml(url)}">Copy</button></div>`
+      ).join('');
+
+      networkUrlsEl.querySelectorAll('.copy-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          navigator.clipboard.writeText(btn.dataset.url);
+          btn.textContent = '✓';
+          setTimeout(() => btn.textContent = 'Copy', 1500);
+        });
+      });
+
+      networkInfoEl.textContent = `${data.local.length} network URL(s) available`;
+    }
+  } catch {
+    // Non-critical
+  }
+}
+
+function showConnectModal() {
+  connectModal.classList.remove('hidden');
+}
+
+function hideConnectModal() {
+  connectModal.classList.add('hidden');
 }
 
 /* ------------------------------------------------------------------ */
@@ -349,12 +481,23 @@ refreshBtn.addEventListener('click', () => {
 
 autoRefreshCb.addEventListener('change', toggleAutoRefresh);
 
+menuBtn.addEventListener('click', () => {
+  headerInfo.classList.toggle('mobile-expanded');
+});
+
+closeModalBtn.addEventListener('click', hideConnectModal);
+
+connectModal.addEventListener('click', (e) => {
+  if (e.target === connectModal) hideConnectModal();
+});
+
 document.addEventListener('keydown', (e) => {
   if (e.key === 'r' && !e.ctrlKey && !e.metaKey && !e.altKey) {
     const active = document.activeElement;
     if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) return;
     refreshBtn.click();
   }
+  if (e.key === 'Escape') hideConnectModal();
 });
 
 /* ------------------------------------------------------------------ */
@@ -364,10 +507,20 @@ document.addEventListener('keydown', (e) => {
 function init() {
   intervalDisp.textContent = refreshInterval;
   showLoading();
-  fetchGpuData();
-  if (autoRefreshEnabled) {
-    startAutoRefresh();
+
+  // Initialize pull-to-refresh on mobile
+  if ('ontouchstart' in window) {
+    initPullToRefresh();
   }
+
+  // Load network info
+  loadNetworkInfo();
+
+  // Try SSE first, fallback to polling
+  connectSSE();
+
+  // Also do initial fetch to populate data immediately
+  fetchGpuData();
 }
 
 if (document.readyState === 'loading') {
