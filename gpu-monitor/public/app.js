@@ -222,7 +222,8 @@ function getOrCreateCard(gpu) {
 }
 
 function updateCard(card, gpu) {
-  const { querySelector: q, querySelectorAll: qa } = card;
+  const q = (sel) => card.querySelector(sel);
+  const qa = (sel) => card.querySelectorAll(sel);
 
   q('.gpu-name').textContent = gpu.name;
   q('.gpu-id').textContent = `GPU ${gpu.id}`;
