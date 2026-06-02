@@ -211,6 +211,20 @@ app.get('/api/gpu', async (req, res) => {
 // Fetch CUDA version at startup (only runs once)
 initCudaVersion();
 
+// Periodic ticker: fetch fresh GPU data and broadcast to SSE clients
+// This runs regardless of API requests, keeping SSE streams alive.
+// Expires the cache before calling getGpuData to force a fresh read.
+const TICK_INTERVAL = 2000; // 2 seconds (matches CACHE_TTL)
+setInterval(async () => {
+  try {
+    cacheTime = 0; // Force cache miss
+    const data = await getGpuData();
+    // broadcastToSseClients is called inside getGpuData on cache refresh
+  } catch (err) {
+    console.error(`[${new Date().toISOString()}] Ticker error:`, err.message);
+  }
+}, TICK_INTERVAL);
+
 // Get local network interfaces for display
 function getLocalAddresses() {
   const interfaces = os.networkInterfaces();

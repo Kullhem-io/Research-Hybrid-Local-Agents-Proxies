@@ -94,6 +94,19 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
+/**
+ * Compute memory capacity usage as a percentage from raw "X MiB" strings.
+ * Falls back to 0 if parsing fails.
+ */
+function computeMemoryPercent(usedRaw, totalRaw) {
+  try {
+    const usedMiB = parseFloat(String(usedRaw).replace(/[^\d.]/g, ''));
+    const totalMiB = parseFloat(String(totalRaw).replace(/[^\d.]/g, ''));
+    if (totalMiB > 0) return Math.round((usedMiB / totalMiB) * 100);
+  } catch { /* fallback below */ }
+  return 0;
+}
+
 /* ------------------------------------------------------------------ */
 /*  SSE Connection (primary data source)                              */
 /* ------------------------------------------------------------------ */
@@ -235,11 +248,12 @@ function updateCard(card, gpu) {
   metricRows[0].querySelector('.value').textContent = `${gpu.gpuUtil}%`;
   updateProgressFill(gpuFill, gpu.gpuUtil, colorClass(gpu.gpuUtil));
 
-  // Memory Usage
+  // Memory Usage — show capacity fullness (used/total), not bandwidth utilization
   const memFill = metricRows[1].querySelector('.progress-fill');
+  const memPercent = computeMemoryPercent(gpu.memoryUsed, gpu.memoryTotal);
   metricRows[1].querySelector('.value').textContent =
     `${formatMemory(gpu.memoryUsed)} / ${formatMemory(gpu.memoryTotal)}`;
-  updateProgressFill(memFill, gpu.memUtil, colorClass(gpu.memUtil));
+  updateProgressFill(memFill, memPercent, colorClass(memPercent));
 
   // Temperature
   const tempFill = metricRows[2].querySelector('.progress-fill');
@@ -288,6 +302,7 @@ function renderGpuCards(data) {
   }
 
   if (isFirstRender) {
+    gpuGrid.innerHTML = '';  // Clear loading div
     gpus.forEach(gpu => {
       const card = getOrCreateCard(gpu);
       updateCard(card, gpu);
